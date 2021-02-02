@@ -1,0 +1,68 @@
+version: '3'
+services:
+  bitcoind:
+    image: coblox/bitcoin-core:0.19.1
+    container_name: bitcoind
+    entrypoint:
+      - /usr/bin/bitcoind
+    command:
+      - -server
+      - -regtest
+      - -txindex=1
+      - -listen=1
+      - -prune=0
+      - -rpcallowip=0.0.0.0/0
+      - -rpcbind=0.0.0.0
+      - -rpcuser=admin
+      - -rpcpassword=123
+      - -printtoconsole
+      - -rest
+      - -fallbackfee=0.0002
+      - -debug
+      - -addresstype=bech32
+      - -datadir=/home/bdk-test
+      - -rpcport=18884
+      - -port=18886
+      - -rest
+    networks:
+      local:
+        ipv4_address: 10.10.0.11
+    ports:
+      - 7041:18884
+      - 7042:18886
+    volumes:
+      - data:/home/bdk-test
+  electrs:
+    image: vulpemventures/electrs:latest
+    container_name: electrs
+    entrypoint:
+      - /build/electrs
+    command:
+      - -vvvvv
+      - --network=regtest
+      - --daemon-dir=/home/bdk-test/
+      - --daemon-rpc-addr=10.10.0.11:18884
+      - --cookie=admin:123
+      - --http-addr=0.0.0.0:3002
+      - --electrum-rpc-addr=0.0.0.0:60401
+      - --cors="*"
+    networks:
+      local:
+        ipv4_address: 10.10.0.13
+    depends_on:
+      - bitcoind
+    ports:
+      - 60401:60401
+      - 3012:3002
+    volumes:
+      - data:/home/bdk-test
+
+networks:
+  local:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 10.10.0.0/24
+
+volumes:
+  data:
