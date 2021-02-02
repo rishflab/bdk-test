@@ -2,8 +2,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::Result;
-use bdk::blockchain::ElectrumBlockchain;
 use bdk::blockchain::{noop_progress, ConfigurableBlockchain, LogProgress};
+use bdk::blockchain::{Blockchain, ElectrumBlockchain};
 use bdk::database::MemoryDatabase;
 use bdk::electrum_client::{Client, ElectrumApi};
 use bitcoin::consensus::serialize;
@@ -114,7 +114,12 @@ async fn main() {
     let address = bdk_wallet.get_new_address().unwrap();
     println!("funded address: {}", address);
 
+    // sync wallet
     bdk_wallet.sync(noop_progress(), None).unwrap();
+
+    // subscribe to block headers
+    let client = bdk::electrum_client::Client::new(bdk_url.as_str()).unwrap();
+    client.block_headers_subscribe().unwrap();
 
     // get some money for our bdk wallet if n balance
     while bdk_wallet.get_balance().unwrap() <= 200_000 {
@@ -145,14 +150,15 @@ async fn main() {
     let txid = bdk_wallet.broadcast(signed_psbt.extract_tx()).unwrap();
     println!("txid: {}", txid);
 
-    // bdk_wallet.sync(noop_progress(), None).unwrap();
+    let block_header_old = bdk_wallet.client().get_height().unwrap();
+    println!("Current block height: {} ", block_header_old);
+    bitcoind_client
+        .generatetoaddress(2, miner_address, None)
+        .await
+        .unwrap();
 
-    // bitcoind_client
-    //     .generatetoaddress(2, miner_address, None)
-    //     .await
-    //     .unwrap();
-
-    // let client = bdk::electrum_client::Client::new(bdk_url.as_str()).unwrap();
-    // let merkle = client.transaction_get_merkle(&txid, height).unwrap();
-    // println!("merkle height: {:?}", merkle);
+    // update to get the latest 2 blocks
+    bdk_wallet.sync(noop_progress(), None).unwrap();
+    let block_header_new = bdk_wallet.client().get_height().unwrap();
+    println!("New block height: {} ", block_header_new);
 }
