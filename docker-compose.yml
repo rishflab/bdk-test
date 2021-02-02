@@ -18,17 +18,12 @@ services:
       - -printtoconsole
       - -rest
       - -fallbackfee=0.0002
-      - -debug
-      - -addresstype=bech32
       - -datadir=/home/bdk-test
-      - -rpcport=18884
+      - -rpcport=18443 # default port. just for documentation purpose
       - -port=18886
       - -rest
-    networks:
-      local:
-        ipv4_address: 10.10.0.11
     ports:
-      - 7041:18884
+      - 7041:18443
       - 7042:18886
     volumes:
       - data:/home/bdk-test
@@ -41,14 +36,11 @@ services:
       - -vvvvv
       - --network=regtest
       - --daemon-dir=/home/bdk-test/
-      - --daemon-rpc-addr=10.10.0.11:18884
+      - --daemon-rpc-addr=bitcoind:18443
       - --cookie=admin:123
       - --http-addr=0.0.0.0:3002
       - --electrum-rpc-addr=0.0.0.0:60401
       - --cors="*"
-    networks:
-      local:
-        ipv4_address: 10.10.0.13
     depends_on:
       - bitcoind
     ports:
@@ -56,13 +48,6 @@ services:
       - 3012:3002
     volumes:
       - data:/home/bdk-test
-
-networks:
-  local:
-    driver: bridge
-    ipam:
-      config:
-        - subnet: 10.10.0.0/24
 
 volumes:
   data:

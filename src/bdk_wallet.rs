@@ -1,18 +1,18 @@
-use ::bitcoin::{util::psbt::PartiallySignedTransaction, Txid};
+use std::time::Duration;
+use ::bitcoin::{Txid, util::psbt::PartiallySignedTransaction};
 use anyhow::Result;
 use bdk::{
     bitcoin::Network,
-    blockchain::{noop_progress, ElectrumBlockchain},
+    blockchain::{ElectrumBlockchain, noop_progress},
     database::MemoryDatabase,
     electrum_client::{Client, ElectrumApi},
     FeeRate,
 };
-use std::time::Duration;
-use tokio::time::interval;
-use bdk::blockchain::{Blockchain, CompactFiltersBlockchain};
-use url::Url;
+use bdk::blockchain::{Blockchain};
 use bitcoin::{Address, Amount, Transaction};
 use reqwest::Method;
+use tokio::time::interval;
+use url::Url;
 
 pub struct BdkWallet {
     pub inner: bdk::Wallet<ElectrumBlockchain, MemoryDatabase>,

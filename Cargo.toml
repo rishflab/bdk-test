@@ -9,7 +9,7 @@ edition = "2018"
 [dependencies]
 anyhow = "1"
 tokio = { version = "0.2", features = ["rt-threaded", "time", "macros", "sync"] }
-bdk = { version = "*", features = ["compact_filters"]}
+bdk = { version = "*", features = ["electrum"]}
 bitcoin = { version = "0.25", features = ["rand", "use-serde"] }
 bitcoin-harness = { git = "https://github.com/coblox/bitcoin-harness-rs", rev = "864b55fcba2e770105f135781dd2e3002c503d12" }
 url = "2.1"
