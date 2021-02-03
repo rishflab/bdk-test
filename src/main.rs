@@ -1,26 +1,17 @@
-use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::Result;
-use bdk::blockchain::{noop_progress, ConfigurableBlockchain, LogProgress};
-use bdk::blockchain::{Blockchain, ElectrumBlockchain};
+use bdk::blockchain::noop_progress;
+use bdk::blockchain::Blockchain;
+use bdk::blockchain::EsploraBlockchain;
 use bdk::database::MemoryDatabase;
-use bdk::electrum_client::{Client, ElectrumApi};
-use bitcoin::consensus::serialize;
-use bitcoin::util::psbt::PartiallySignedTransaction;
-use bitcoin::{Amount, Network, Transaction};
+use bdk::FeeRate;
+use bitcoin::{Amount, Network};
 use bitcoin_harness::BitcoindRpcApi;
-use hyper::body::Buf;
+use std::str::FromStr;
 use url::Url;
 
-use crate::bdk_wallet::BdkWallet;
-use bdk::FeeRate;
-use std::str::FromStr;
-
-mod bdk_wallet;
-
 const BITCOIND_RPC_PORT: u16 = 7041;
-const ELECTRUM_RPC_PORT: u16 = 60401;
 const ELECTRUM_HTTP_PORT: u16 = 3012;
 const USERNAME: &str = "admin";
 const PASSWORD: &str = "123";
@@ -55,7 +46,7 @@ async fn mine(
     reward_address: bitcoin::Address,
 ) -> Result<()> {
     loop {
-        tokio::time::delay_for(Duration::from_secs(1)).await;
+        tokio::time::sleep(Duration::from_secs(1)).await;
         bitcoind_client
             .generatetoaddress(1, reward_address.clone(), None)
             .await?;
@@ -95,31 +86,22 @@ async fn main() {
     let miner = bitcoind_client.with_wallet("miner").unwrap();
     let miner_address = bitcoin::Address::from_str("2NFpmXDDezMjEtifbmJaxq8wwvAaDMrhvGe").unwrap(); // just a hardcoded address
 
-    let bdk_url = {
-        let input = format!("tcp://@localhost:{}", ELECTRUM_RPC_PORT);
-        Url::parse(&input).unwrap()
-    };
+    let bdk_url = format!("http://localhost:{}", ELECTRUM_HTTP_PORT);
 
-    let client = bdk::electrum_client::Client::new(bdk_url.as_str()).unwrap();
-
-    let blockchain = ElectrumBlockchain::from(client);
+    let blockchain = EsploraBlockchain::new(&bdk_url, Some(2));
 
     let bdk_wallet = bdk::Wallet::new(
-        "wpkh(tprv8ZgxMBicQKsPdpkqS7Eair4YxjcuuvDPNYmKX3sCniCf16tHEVrjjiSXEkFRnUH77yXc6ZcwHHcLNfjdi5qUvw3VDfgYiH5mNsj5izuiu2N/0/0/*)",
+        "wpkh(tprv8ZgxMBicQKsPdpkqS7Eair4YxjcuuvDPNYmKX3sCniCf16tHEVrjjiSXEkFRnUH77yXc6ZcwHHcLNfjdi5qUvw3VDfgYiH5mNsj5izuiu2N/0/1/*)",
         None,
         Network::Regtest,
         MemoryDatabase::default(),
-        blockchain).unwrap();
+        blockchain).await.unwrap();
 
     let address = bdk_wallet.get_new_address().unwrap();
     println!("funded address: {}", address);
 
     // sync wallet
-    bdk_wallet.sync(noop_progress(), None).unwrap();
-
-    // subscribe to block headers
-    let client = bdk::electrum_client::Client::new(bdk_url.as_str()).unwrap();
-    client.block_headers_subscribe().unwrap();
+    bdk_wallet.sync(noop_progress(), None).await.unwrap();
 
     // get some money for our bdk wallet if n balance
     while bdk_wallet.get_balance().unwrap() <= 200_000 {
@@ -128,7 +110,7 @@ async fn main() {
             .await
             .unwrap();
 
-        bdk_wallet.sync(noop_progress(), None).unwrap();
+        bdk_wallet.sync(noop_progress(), None).await.unwrap();
     }
 
     let balance = bdk_wallet.get_balance().unwrap();
@@ -137,28 +119,33 @@ async fn main() {
     let address = bdk_wallet.get_new_address().unwrap();
     println!("target address: {}", address);
 
-    let (psbt, details) = bdk_wallet
-        .create_tx(
-            bdk::TxBuilder::with_recipients(vec![(address.script_pubkey(), 200_000)])
-                .fee_rate(FeeRate::from_sat_per_vb(5.0)),
-        )
-        .unwrap();
+    let (psbt, _details) = {
+        let mut builder = bdk_wallet.build_tx();
+        builder
+            .add_recipient(address.script_pubkey(), 200_000)
+            .fee_rate(FeeRate::from_sat_per_vb(5.0));
+        builder.finish().unwrap()
+    };
 
     let (signed_psbt, finalized) = bdk_wallet.sign(psbt, None).unwrap();
     debug_assert!(finalized);
 
-    let txid = bdk_wallet.broadcast(signed_psbt.extract_tx()).unwrap();
+    let txid = bdk_wallet
+        .broadcast(signed_psbt.extract_tx())
+        .await
+        .unwrap();
     println!("txid: {}", txid);
 
-    let block_header_old = bdk_wallet.client().get_height().unwrap();
+    let block_header_old = bdk_wallet.client().get_height().await.unwrap();
     println!("Current block height: {} ", block_header_old);
     bitcoind_client
         .generatetoaddress(2, miner_address, None)
         .await
         .unwrap();
 
+    tokio::time::sleep(Duration::from_secs(5)).await;
     // update to get the latest 2 blocks
-    bdk_wallet.sync(noop_progress(), None).unwrap();
-    let block_header_new = bdk_wallet.client().get_height().unwrap();
+    bdk_wallet.sync(noop_progress(), None).await.unwrap();
+    let block_header_new = bdk_wallet.client().get_height().await.unwrap();
     println!("New block height: {} ", block_header_new);
 }
