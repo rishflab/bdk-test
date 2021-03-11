@@ -1,18 +1,15 @@
-use ::bitcoin::{util::psbt::PartiallySignedTransaction, Txid};
+use anyhow::Context;
 use anyhow::Result;
-use bdk::blockchain::Blockchain;
 use bdk::{
     bitcoin::Network,
     blockchain::{noop_progress, ElectrumBlockchain},
     database::MemoryDatabase,
-    electrum_client::{Client, ElectrumApi},
-    FeeRate,
+    electrum_client::ElectrumApi,
 };
-use bitcoin::{Address, Amount, Transaction};
+use bitcoin::{Address, Amount};
 use reqwest::Method;
-use std::sync::{Arc, Mutex};
-use std::time::Duration;
-use tokio::time::interval;
+use std::sync::Arc;
+use tokio::sync::Mutex;
 use url::Url;
 
 pub struct Wallet {
