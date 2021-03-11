@@ -20,6 +20,3 @@ hyper = "0.13"
 reqwest = "0.10"
 env_logger = "0.8"
 log = "0.4"
-
-[patch.crates-io]
-electrum-client = { path = "/home/thomas/src/github.com/bitcoindevkit/rust-electrum-client" }
