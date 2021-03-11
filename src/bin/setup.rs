@@ -37,7 +37,7 @@ async fn mine(
     reward_address: bitcoin::Address,
 ) -> Result<()> {
     loop {
-        tokio::time::delay_for(Duration::from_secs(1)).await;
+        tokio::time::sleep(Duration::from_secs(1)).await;
         bitcoind_client
             .generatetoaddress(1, reward_address.clone(), None)
             .await?;

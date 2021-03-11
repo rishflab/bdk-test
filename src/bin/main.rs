@@ -1,11 +1,14 @@
 use anyhow::Result;
 use bdk_test::Wallet;
+use std::time::Duration;
 use url::Url;
 
 const ELECTRUM_RPC_PORT: u16 = 60401;
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    env_logger::init();
+
     // note: you need to generate 101 blocks first
     // note2: miner wallet name is `miner`
     // run setup function above ;)
@@ -15,9 +18,13 @@ async fn main() -> Result<()> {
         Url::parse(&input).unwrap()
     };
 
-    let bdk_wallet = Wallet::new(&bdk_url).await?;
+    let mut bdk_wallet = Wallet::new(&bdk_url).await?;
 
-    bdk_wallet.sync().await.unwrap();
+    loop {
+        tokio::time::sleep(Duration::from_millis(500)).await;
 
-    Ok(())
+        let latest_block_height = bdk_wallet.get_latest_block_height()?;
+
+        log::info!("Latest block height is {}", latest_block_height);
+    }
 }
