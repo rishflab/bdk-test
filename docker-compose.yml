@@ -1,7 +1,7 @@
 version: '3'
 services:
   bitcoind:
-    image: coblox/bitcoin-core:0.19.1
+    image: coblox/bitcoin-core:0.21.0
     container_name: bitcoind
     entrypoint:
       - /usr/bin/bitcoind
