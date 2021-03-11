@@ -1,24 +1,9 @@
-use std::sync::Arc;
-use std::time::Duration;
-
 use anyhow::Result;
-use bdk::blockchain::{noop_progress, ConfigurableBlockchain, LogProgress};
-use bdk::blockchain::{Blockchain, ElectrumBlockchain};
-use bdk::database::MemoryDatabase;
-use bdk::electrum_client::{Client, ElectrumApi};
-use bitcoin::consensus::serialize;
-use bitcoin::util::psbt::PartiallySignedTransaction;
-use bitcoin::{Amount, Network, Transaction};
 use bitcoin_harness::BitcoindRpcApi;
-use hyper::body::Buf;
+use std::time::Duration;
 use url::Url;
 
-use bdk::FeeRate;
-use std::str::FromStr;
-
 const BITCOIND_RPC_PORT: u16 = 7041;
-const ELECTRUM_RPC_PORT: u16 = 60401;
-const ELECTRUM_HTTP_PORT: u16 = 3012;
 const USERNAME: &str = "admin";
 const PASSWORD: &str = "123";
 
@@ -52,7 +37,7 @@ async fn mine(
     reward_address: bitcoin::Address,
 ) -> Result<()> {
     loop {
-        tokio::time::delay_for(Duration::from_secs(1)).await;
+        tokio::time::sleep(Duration::from_secs(1)).await;
         bitcoind_client
             .generatetoaddress(1, reward_address.clone(), None)
             .await?;

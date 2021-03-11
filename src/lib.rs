@@ -1,86 +1,81 @@
-use ::bitcoin::{util::psbt::PartiallySignedTransaction, Txid};
 use anyhow::Result;
-use bdk::blockchain::Blockchain;
-use bdk::{
-    bitcoin::Network,
-    blockchain::{noop_progress, ElectrumBlockchain},
-    database::MemoryDatabase,
-    electrum_client::{Client, ElectrumApi},
-    FeeRate,
-};
-use bitcoin::{Address, Amount, Transaction};
-use reqwest::Method;
-use std::sync::{Arc, Mutex};
-use std::time::Duration;
-use tokio::time::interval;
+use bdk::electrum_client::ElectrumApi;
+use bdk::electrum_client::{GetHistoryRes, HeaderNotification};
+use bitcoin::Script;
+use std::collections::HashMap;
 use url::Url;
 
 pub struct Wallet {
-    inner: Arc<Mutex<bdk::Wallet<ElectrumBlockchain, MemoryDatabase>>>,
+    electrum: bdk::electrum_client::Client,
+    latest_block: HeaderNotification,
+    script_history: HashMap<Script, Vec<GetHistoryRes>>,
+}
+
+pub enum ScriptStatus {
+    Unseen,
+    InMempool,
+    Confirmed { depth: u64 },
 }
 
 impl Wallet {
     pub async fn new(url: &Url) -> Result<Self> {
-        let client = bdk::electrum_client::Client::new(url.as_str()).unwrap();
-
-        let header_notif = client.block_headers_subscribe().unwrap();
-        dbg!(header_notif);
-
-        let blockchain = ElectrumBlockchain::from(client);
-
-        let bdk_wallet = bdk::Wallet::new(
-            "wpkh(tprv8ZgxMBicQKsPdpkqS7Eair4YxjcuuvDPNYmKX3sCniCf16tHEVrjjiSXEkFRnUH77yXc6ZcwHHcLNfjdi5qUvw3VDfgYiH5mNsj5izuiu2N/0/0/*)",
-            None,
-            Network::Regtest,
-            MemoryDatabase::default(),
-            blockchain).unwrap();
+        let electrum = bdk::electrum_client::Client::from_config(
+            url.as_str(),
+            bdk::electrum_client::ConfigBuilder::new().retry(2).build(),
+        )
+        .unwrap();
+        let latest_block = electrum.block_headers_subscribe().unwrap();
 
         Ok(Self {
-            inner: Arc::new(Mutex::new(bdk_wallet)),
+            electrum,
+            latest_block,
+            script_history: Default::default(),
         })
     }
 
-    pub async fn balance(&self) -> Result<Amount> {
-        let balance = self
-            .inner
-            .lock()
-            .await
-            .get_balance()
-            .context("Failed to calculate Bitcoin balance")?;
+    pub fn get_latest_block_height(&mut self) -> Result<u64> {
+        while let Some(new_block) = self.electrum.block_headers_pop().unwrap() {
+            self.latest_block = new_block
+        }
 
-        Ok(Amount::from_sat(balance))
+        Ok(self.latest_block.height as u64)
     }
 
-    pub async fn get_block_height(&self, electrum_http_url: Url) -> String {
-        let client = reqwest::Client::new();
-        let resp = client
-            .request(Method::GET, electrum_http_url)
-            .send()
-            .await
-            .unwrap();
-        let height = resp.text().await.unwrap();
-
-        height
-    }
-
-    pub async fn new_address(&self) -> Result<Address> {
-        let address = self
-            .inner
-            .lock()
-            .await
-            .get_new_address()
-            .context("Failed to get new Bitcoin address")?;
-
-        Ok(address)
-    }
-
-    pub async fn sync(&self) -> Result<()> {
-        self.inner
-            .lock()
-            .await
-            .sync(noop_progress(), None)
-            .context("Failed to sync balance of Bitcoin wallet")?;
+    pub fn subscribe_to_script(&self, script: Script) -> Result<()> {
+        self.electrum.script_subscribe(&script).unwrap();
 
         Ok(())
+    }
+
+    pub fn status_of_script(&mut self, script: Script) -> Result<ScriptStatus> {
+        let blocktip = self.get_latest_block_height()?;
+
+        if std::iter::from_fn(|| self.electrum.script_pop(&script).unwrap())
+            .last()
+            .is_some()
+        {
+            let history = self.electrum.script_get_history(&script).unwrap();
+
+            self.script_history.insert(script.clone(), history);
+        }
+
+        let history = self.script_history.entry(script).or_default();
+
+        match history.as_slice() {
+            [] => Ok(ScriptStatus::Unseen),
+            [single, remaining @ ..] => {
+                if remaining.len() > 0 {
+                    log::warn!("Found more than a single history entry for script. This is highly unexpected and those history entries will be ignored.")
+                }
+
+                if single.height <= 0 {
+                    Ok(ScriptStatus::InMempool)
+                } else {
+                    Ok(ScriptStatus::Confirmed {
+                        depth: blocktip - (single.height as u64),
+                    })
+                }
+            }
+        }
     }
 }
